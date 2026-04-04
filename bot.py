@@ -4,7 +4,7 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, time, timezone
+from datetime import datetime, time as dt_time, timezone
 import time
 import requests
 
@@ -41,8 +41,8 @@ def atr(df, period=14):
 def in_kill_zone():
     now = datetime.now(timezone.utc).time()
     for start, end in KILL_ZONES:
-        start_t = time(int(start.split(":")[0]), int(start.split(":")[1]))
-        end_t = time(int(end.split(":")[0]), int(end.split(":")[1]))
+        start_t = dt_time(int(start.split(":")[0]), int(start.split(":")[1]))
+        end_t = dt_time(int(end.split(":")[0]), int(end.split(":")[1]))
         if start_t <= now <= end_t:
             return True
     return False
@@ -112,8 +112,8 @@ def generate_signal():
         ready_msg = "⚡ Be ready! Potential XAUUSD signal detected. Monitoring M1..."
         send_telegram(ready_msg)
 
-        # Wait short time to confirm signal
-        time.sleep(10)  # 10 seconds
+        # Wait a few seconds to confirm signal
+        time.sleep(10)
 
         # Send full signal
         price = df_m1['Close'].iloc[-1]
@@ -164,6 +164,6 @@ def check_for_commands():
 if __name__ == "__main__":
     print("📡 XAUUSD Smart Risk Signal Bot Running...")
     while True:
-        generate_signal()
-        check_for_commands()
-        time.sleep(60)  # check every 1 minute
+        generate_signal()       # only sends when safe/risk conditions are met
+        check_for_commands()    # respond to /test
+        time.sleep(60)          # check every 1 min
