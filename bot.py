@@ -1,10 +1,10 @@
-# 📌 Institutional Gold Futures XAUUSD/GC=F Signal Bot → Safe Scalping Alerts
+# 📌 Institutional Gold Futures GC=F Signal Bot → Safe Scalping Alerts
 # ✅ Works with GC=F on Yahoo, auto-checks for data, fully synchronous, deployable on Railway
 
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, time, timezone
+from datetime import datetime, time as dt_time, timezone
 import time
 import requests
 
@@ -51,8 +51,8 @@ def atr(df, period=14):
 def in_kill_zone():
     now = datetime.now(timezone.utc).time()
     for start, end in KILL_ZONES:
-        start_t = time(int(start.split(":")[0]), int(start.split(":")[1]))
-        end_t = time(int(end.split(":")[0]), int(end.split(":")[1]))
+        start_t = dt_time(int(start.split(":")[0]), int(start.split(":")[1]))
+        end_t = dt_time(int(end.split(":")[0]), int(end.split(":")[1]))
         if start_t <= now <= end_t:
             return True
     return False
@@ -67,6 +67,8 @@ def detect_bos(df):
     return None
 
 def detect_order_block(df):
+    if df.empty:
+        return None
     last = df.iloc[-1]
     body = abs(last['Close'] - last['Open'])
     candle_range = last['High'] - last['Low']
@@ -101,7 +103,11 @@ def generate_signal():
         print("❌ Skipping signal: No data available.")
         return
 
-    atr_m1 = atr(df_m1, ATR_PERIOD).iloc[-1]
+    try:
+        atr_m1 = atr(df_m1, ATR_PERIOD).iloc[-1]
+    except IndexError:
+        print("⚠️ ATR calculation failed: insufficient data.")
+        return
 
     bos_signal = detect_bos(df_m1)
     ob_signal = detect_order_block(df_m1)
