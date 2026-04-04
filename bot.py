@@ -21,11 +21,13 @@ KILL_ZONES = [("09:00", "11:00"), ("13:00", "15:00")]
 TELEGRAM_TOKEN = "8601674578:AAHycLEx-6M_r_JHFuS96oKuLTBJqefwKnk"
 CHAT_ID = "992623579"
 
+# Keep track of last update processed
+update_offset = None
+
 # ---------------- HELPERS ----------------
 def send_telegram(message, chat_id=CHAT_ID):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message}
-    requests.post(url, data=payload)
+    requests.post(url, data={"chat_id": chat_id, "text": message})
 
 def get_data(symbol, period="2d", interval="1m"):
     df = yf.download(symbol, period=period, interval=interval, auto_adjust=True)
@@ -117,7 +119,7 @@ def generate_signal():
         print("❌ No valid signal now.")
 
 # ---------------- TEST SIGNAL ----------------
-def generate_test_signal(chat_id=CHAT_ID):
+def generate_test_signal(chat_id):
     message = (
         "💰 XAUUSD SIGNAL (TEST) 💰\n"
         "Direction: BUY\n"
@@ -131,10 +133,14 @@ def generate_test_signal(chat_id=CHAT_ID):
 
 # ---------------- TELEGRAM COMMAND CHECK ----------------
 def check_for_commands():
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+    global update_offset
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?timeout=10"
+    if update_offset:
+        url += f"&offset={update_offset}"
     response = requests.get(url).json()
 
     for update in response.get("result", []):
+        update_offset = update["update_id"] + 1  # Prevent reprocessing
         if "message" in update:
             chat_id = update["message"]["chat"]["id"]
             text = update["message"].get("text", "")
@@ -146,5 +152,5 @@ if __name__ == "__main__":
     print("📡 XAUUSD Telegram Signal Bot Running...")
     while True:
         generate_signal()       # Sends real signals if conditions met
-        check_for_commands()    # Responds to /test commands
-        t.sleep(3600)           # Check every 1 hour
+        check_for_commands()    # Responds to /test instantly
+        t.sleep(5)              # Check every 5 seconds for commands
