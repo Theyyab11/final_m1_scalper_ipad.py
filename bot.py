@@ -1,4 +1,4 @@
-# 🚀 XAUUSD ELITE M1 SCALPER BOT (TWELVEDATA LIVE MARKET)
+# 🚀 XAUUSD ELITE M1 AUTOPILOT SNIPER BOT (TWELVEDATA LIVE MARKET)
 
 import requests
 import pandas as pd
@@ -9,7 +9,7 @@ import pytz
 
 # ---------------- CONFIG ----------------
 SYMBOL = "XAU/USD"
-API_KEY = "c3c3a13b07cb486b81622aa58a73e9c0"  # Updated Twelve Data API
+API_KEY = "c3c3a13b07cb486b81622aa58a73e9c0"  # Twelve Data API
 TELEGRAM_TOKEN = "8601674578:AAHycLEx-6M_r_JHFuS96oKuLTBJqefwKnk"
 CHAT_ID = "992623579"
 
@@ -102,7 +102,7 @@ def generate_signal(be_ready=False):
         tp = price - 1.5 * atr_val
 
     msg = (
-        f"🚀 ELITE GOLD M1 SCALPER SIGNAL\n"
+        f"🚀 ELITE GOLD M1 AUTOPILOT SIGNAL\n"
         f"━━━━━━━━━━━━━━━\n"
         f"📊 XAUUSD (1M)\n"
         f"📍 {direction}\n"
@@ -115,7 +115,39 @@ def generate_signal(be_ready=False):
 
     send_telegram(msg)
     last_signal = direction
-    last_sl_tp = {"sl": sl, "tp": tp}
+    last_sl_tp = {"sl": sl, "tp": tp, "direction": direction, "entry_low": entry_low, "entry_high": entry_high}
+
+# ---------------- TP/SL MONITOR ----------------
+def monitor_tp_sl():
+    global last_sl_tp
+    while True:
+        if last_sl_tp is None: 
+            time.sleep(1)
+            continue
+        df = fetch_data()
+        if df is None or df.empty:
+            time.sleep(1)
+            continue
+        price = df['close'].iloc[-1]
+        sl = last_sl_tp["sl"]
+        tp = last_sl_tp["tp"]
+        direction = last_sl_tp["direction"]
+
+        if direction == "BUY":
+            if price <= sl:
+                send_telegram(f"❌ BUY SL HIT at {price:.2f}")
+                last_sl_tp = None
+            elif price >= tp:
+                send_telegram(f"✅ BUY TP HIT at {price:.2f}")
+                last_sl_tp = None
+        else:
+            if price >= sl:
+                send_telegram(f"❌ SELL SL HIT at {price:.2f}")
+                last_sl_tp = None
+            elif price <= tp:
+                send_telegram(f"✅ SELL TP HIT at {price:.2f}")
+                last_sl_tp = None
+        time.sleep(2)  # check every 2 sec
 
 # ---------------- TELEGRAM COMMANDS ----------------
 def check_commands():
@@ -128,7 +160,7 @@ def check_commands():
             if "message" in upd:
                 text = upd["message"].get("text", "").lower()
                 if text == "/test":
-                    send_telegram("🔥 ELITE GOLD M1 SCALPER BOT ACTIVE")
+                    send_telegram("🔥 ELITE GOLD M1 AUTOPILOT BOT ACTIVE")
                 elif text == "/signal":
                     generate_signal()
                 elif text == "/price":
@@ -158,8 +190,9 @@ def run_auto_scalper():
 
 # ---------------- START ----------------
 if __name__ == "__main__":
-    print("🚀 ELITE GOLD M1 SCALPER BOT RUNNING...")
+    print("🚀 ELITE GOLD M1 AUTOPILOT SNIPER BOT RUNNING...")
     threading.Thread(target=run_auto_scalper, daemon=True).start()
     threading.Thread(target=check_commands_loop, daemon=True).start()
+    threading.Thread(target=monitor_tp_sl, daemon=True).start()
     while True:
         time.sleep(1)
