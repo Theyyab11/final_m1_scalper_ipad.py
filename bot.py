@@ -193,3 +193,8 @@ if __name__ == "__main__":
     # Keep main alive
     while True:
         time.sleep(1)
+
+@bot.message_handler(commands=['getchannelid'])
+def get_channel_id(message):
+    print(message.chat.id)
+    bot.reply_to(message, f"Channel ID: {message.chat.id}")
