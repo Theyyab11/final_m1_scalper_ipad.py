@@ -1,4 +1,4 @@
-# 🚀 XAUUSD ELITE SNIPER BOT (TWELVEDATA LIVE MARKET)
+# 🚀 XAUUSD ELITE SNIPER PRO BOT (TWELVEDATA LIVE MARKET)
 
 import requests
 import pandas as pd
@@ -37,23 +37,24 @@ def is_killzone():
     return (11 <= hour <= 14) or (16 <= hour <= 19)
 
 # ---------------- DATA ----------------
-def fetch_data():
-    try:
-        url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval=1min&outputsize=100&apikey={API_KEY}"
-        res = requests.get(url).json()
-        if "values" not in res:
-            print("Market data unavailable or API limit reached:", res)
-            return None
-        df = pd.DataFrame(res["values"])
-        df = df[::-1]  # oldest to newest
-        df["open"] = df["open"].astype(float)
-        df["high"] = df["high"].astype(float)
-        df["low"] = df["low"].astype(float)
-        df["close"] = df["close"].astype(float)
-        return df
-    except Exception as e:
-        print("Fetch error:", e)
-        return None
+def fetch_data(retries=3, delay=1):
+    """Fetch live 1-min XAU/USD data from Twelve Data with retries"""
+    for attempt in range(retries):
+        try:
+            url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval=1min&outputsize=100&apikey={API_KEY}"
+            res = requests.get(url, timeout=5).json()
+            if "values" not in res:
+                print(f"Attempt {attempt+1}: Market data unavailable or API limit reached:", res)
+                time.sleep(delay)
+                continue
+            df = pd.DataFrame(res["values"])[::-1]  # oldest to newest
+            for col in ["open","high","low","close"]:
+                df[col] = df[col].astype(float)
+            return df
+        except Exception as e:
+            print(f"Attempt {attempt+1}: Fetch error:", e)
+            time.sleep(delay)
+    return None
 
 # ---------------- INDICATORS ----------------
 def atr(df):
@@ -76,35 +77,31 @@ def generate_signal():
 
     df = fetch_data()
     if df is None or df.empty:
-        send_telegram("⚠️ Market data unavailable for XAUUSD")
-        return
+        send_telegram("⚠️ Market data unavailable for XAUUSD. Retrying...")
+        df = fetch_data()
+        if df is None or df.empty:
+            return
 
     atr_val = atr(df).iloc[-1]
-    if pd.isna(atr_val) or atr_val == 0:
-        return
+    if pd.isna(atr_val) or atr_val == 0: return
 
     ema_fast = ema(df, EMA_FAST).iloc[-1]
     ema_slow = ema(df, EMA_SLOW).iloc[-1]
     price = df['close'].iloc[-1]
     mom = momentum(df)
 
-    # Trend filter: EMA fast > EMA slow = BUY, EMA fast < EMA slow = SELL
     direction = "BUY" if ema_fast > ema_slow else "SELL"
 
-    # Confidence calculation
     confidence = 70
     if mom > 0.5 * atr_val: confidence += 10
     if mom > 0.8 * atr_val: confidence += 10
     if (direction=="BUY" and price>ema_slow) or (direction=="SELL" and price<ema_slow): confidence += 10
 
-    if confidence < MIN_CONFIDENCE:
-        return
+    if confidence < MIN_CONFIDENCE: return
 
-    # 🚨 BE READY ALERT
     if last_signal != direction:
         send_telegram("⚠️ ELITE SNIPER ALERT - GOLD SETUP FORMING... Get ready!")
 
-    # Dynamic SL/TP based on ATR
     if direction == "BUY":
         sl = price - 0.5 * atr_val
         tp = price + 1.5 * atr_val
@@ -115,7 +112,6 @@ def generate_signal():
     entry_low = price - 0.1 * atr_val
     entry_high = price + 0.1 * atr_val
 
-    # SEND SIGNAL
     msg = (
         f"🚀 ELITE GOLD SNIPER SIGNAL\n"
         f"━━━━━━━━━━━━━━━\n"
