@@ -186,10 +186,12 @@ def check_commands():
                 text = upd["message"].get("text", "").lower()
                 chat_id = upd["message"]["chat"]["id"]
 
+                # Send /test message once per command
                 if text == "/test":
                     send_telegram("✅ FAST PRO SNIPER BOT ACTIVE 🔥")
+
+                # Only generate signal once per /force
                 if text == "/force":
-                    send_telegram("⚡ FORCED SNIPER SIGNAL TEST...")
                     generate_signal()
 
             update_offset = upd["update_id"] + 1
