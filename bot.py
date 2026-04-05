@@ -1,4 +1,4 @@
-# 🚀 PRO Multi-Asset AI Signal Bot (Gold + BTC + Oil)
+# 🚀 PRO FAST AI Signal Bot (Gold + BTC + Oil)
 
 import yfinance as yf
 import pandas as pd
@@ -15,13 +15,13 @@ SYMBOLS = {
 }
 
 ATR_PERIOD = 14
-MIN_CONFIDENCE = 75
-SIGNAL_COOLDOWN = 300  # seconds between signals
+MIN_CONFIDENCE = 65   # 🔥 lower = more signals
+COOLDOWN_PER_ASSET = 120  # each asset cooldown (seconds)
 
 TELEGRAM_TOKEN = "8601674578:AAHycLEx-6M_r_JHFuS96oKuLTBJqefwKnk"
 CHAT_ID = "992623579"
 
-last_signal_time = 0
+last_signal_time = {key: 0 for key in SYMBOLS}
 update_offset = None
 
 # ---------------- HELPERS ----------------
@@ -37,8 +37,8 @@ def is_weekend():
 
 def get_active_symbols():
     if is_weekend():
-        return ["BTC"]  # 🔥 always active
-    return ["GOLD", "OIL"]  # weekdays
+        return ["BTC"]  # 🔥 weekend always BTC
+    return ["GOLD", "OIL"]
 
 def get_data(symbol, period="2d", interval="1m"):
     try:
@@ -56,7 +56,7 @@ def atr(df):
     ], axis=1).max(axis=1)
     return tr.rolling(ATR_PERIOD).mean()
 
-# ---------------- SMART LOGIC ----------------
+# ---------------- LOGIC ----------------
 def detect_bos(df):
     last = df['Close'].iloc[-1]
     high = df['High'].iloc[-3:-1].max()
@@ -76,7 +76,7 @@ def detect_ob(df):
     if rng == 0:
         return None
 
-    if body / rng > 0.7:
+    if body / rng > 0.6:  # 🔥 easier trigger
         return "BUY" if last['Close'] > last['Open'] else "SELL"
     return None
 
@@ -90,7 +90,7 @@ def calculate_confidence(bos, ob, trend, momentum, atr_val):
     if ob: score += 25
     if bos == ob: score += 20
     if trend == bos: score += 15
-    if momentum > atr_val: score += 15
+    if momentum > (0.8 * atr_val): score += 15  # 🔥 easier
 
     return min(score, 100)
 
@@ -100,14 +100,14 @@ def calculate_sl_tp(price, atr_val, direction):
     else:
         return price + atr_val, price - (1.5 * atr_val)
 
-# ---------------- SIGNAL ENGINE ----------------
+# ---------------- SIGNAL ----------------
 def generate_signal():
-    global last_signal_time
-
-    if time.time() - last_signal_time < SIGNAL_COOLDOWN:
-        return
-
     for asset in get_active_symbols():
+
+        # cooldown per asset
+        if time.time() - last_signal_time[asset] < COOLDOWN_PER_ASSET:
+            continue
+
         symbol = SYMBOLS[asset]
 
         df_m1 = get_data(symbol, "1d", "1m")
@@ -134,13 +134,13 @@ def generate_signal():
 
         asset_name = {
             "GOLD": "🥇 Gold",
-            "BTC": "🪙 BTC (Weekend)",
+            "BTC": "🪙 BTC",
             "OIL": "🛢️ Oil"
         }[asset]
 
-        send_telegram(f"⚡ Be ready! {asset_name} strong signal forming...")
+        send_telegram(f"⚡ ALERT: {asset_name} setup detected...")
 
-        time.sleep(2)
+        time.sleep(1)
 
         price = df_m1['Close'].iloc[-1]
         sl, tp = calculate_sl_tp(price, atr_val, direction)
@@ -155,10 +155,9 @@ def generate_signal():
 
         send_telegram(msg)
 
-        last_signal_time = time.time()
-        break
+        last_signal_time[asset] = time.time()
 
-# ---------------- COMMAND ----------------
+# ---------------- COMMANDS ----------------
 def check_commands():
     global update_offset
 
@@ -172,11 +171,14 @@ def check_commands():
         update_offset = upd["update_id"] + 1
 
         if "message" in upd:
-            chat_id = upd["message"]["chat"]["id"]
-            text = upd["message"].get("text", "")
+            text = upd["message"].get("text", "").lower()
 
-            if text.lower() == "/test":
-                send_telegram("✅ PRO BOT ACTIVE (AI + Multi-Asset)")
+            if text == "/test":
+                send_telegram("✅ FAST PRO BOT ACTIVE 🔥")
+
+            if text == "/force":
+                send_telegram("⚡ FORCED SIGNAL TEST...")
+                generate_signal()
 
 # ---------------- THREADS ----------------
 def run_signals():
@@ -185,7 +187,7 @@ def run_signals():
             generate_signal()
         except Exception as e:
             print("Signal Error:", e)
-        time.sleep(30)
+        time.sleep(10)  # 🚀 faster scan
 
 def run_commands():
     while True:
@@ -194,7 +196,7 @@ def run_commands():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    print("🚀 PRO AI Signal Bot Running...")
+    print("🚀 FAST PRO BOT RUNNING...")
 
     threading.Thread(target=run_signals, daemon=True).start()
     threading.Thread(target=run_commands, daemon=True).start()
