@@ -1,4 +1,4 @@
-# 🚀 PRO FAST AI SNIPER BOT FIXED
+# 🚀 PRO FAST AI SNIPER BOT FIXED SERIES ISSUE
 
 import yfinance as yf
 import pandas as pd
@@ -64,9 +64,11 @@ def atr(df):
 
 # ---------------- LOGIC ----------------
 def detect_bos(df):
-    last = df['Close'].iloc[-1]
-    high = df['High'].iloc[-3:-1].max()
-    low = df['Low'].iloc[-3:-1].min()
+    if df.empty or len(df) < 3:
+        return None
+    last = float(df['Close'].iloc[-1])
+    high = float(df['High'].iloc[-3:-1].max())
+    low = float(df['Low'].iloc[-3:-1].min())
     if last > high:
         return "BUY"
     elif last < low:
@@ -74,24 +76,32 @@ def detect_bos(df):
     return None
 
 def detect_ob(df):
+    if df.empty or len(df) < 1:
+        return None
     last = df.iloc[-1]
-    body = abs(last['Close'] - last['Open'])
-    rng = last['High'] - last['Low']
+    last_close = float(last['Close'])
+    last_open = float(last['Open'])
+    last_high = float(last['High'])
+    last_low = float(last['Low'])
+    body = abs(last_close - last_open)
+    rng = last_high - last_low
     if rng == 0:
         return None
     if body / rng > 0.6:
-        return "BUY" if last['Close'] > last['Open'] else "SELL"
+        return "BUY" if last_close > last_open else "SELL"
     return None
 
 def momentum_strength(df):
-    return abs(df['Close'].iloc[-1] - df['Close'].iloc[-5])
+    if df.empty or len(df) < 5:
+        return 0
+    return abs(float(df['Close'].iloc[-1]) - float(df['Close'].iloc[-5]))
 
 def calculate_confidence(bos, ob, trend, momentum, atr_val):
     score = 0
     if bos: score += 25
     if ob: score += 25
-    if bos and ob and bos == ob: score += 20
-    if bos and trend == bos: score += 15
+    if bos is not None and ob is not None and isinstance(bos, str) and bos == ob: score += 20
+    if bos is not None and isinstance(bos, str) and trend == bos: score += 15
     if momentum is not None and atr_val is not None and momentum > (0.8 * atr_val): score += 15
     return min(score, 100)
 
@@ -112,7 +122,6 @@ def generate_signal():
             continue
 
         symbol = SYMBOLS[asset]
-
         df_m1 = get_data(symbol, "1d", "1m")
         df_m15 = get_data(symbol, "5d", "15m")
         if df_m1 is None or df_m15 is None:
@@ -124,7 +133,7 @@ def generate_signal():
 
         bos = detect_bos(df_m1)
         ob = detect_ob(df_m1)
-        trend = "BUY" if df_m15['Close'].iloc[-1] > df_m15['Close'].iloc[-3] else "SELL"
+        trend = "BUY" if float(df_m15['Close'].iloc[-1]) > float(df_m15['Close'].iloc[-3]) else "SELL"
         momentum = momentum_strength(df_m1)
 
         confidence = calculate_confidence(bos, ob, trend, momentum, atr_val)
@@ -134,8 +143,8 @@ def generate_signal():
             best_asset = asset
             best_signal = {
                 "direction": bos if bos else trend,
-                "price": df_m1['Close'].iloc[-1],
-                "atr": atr_val,
+                "price": float(df_m1['Close'].iloc[-1]),
+                "atr": float(atr_val),
                 "confidence": confidence
             }
 
@@ -173,7 +182,7 @@ def generate_signal():
         send_telegram(msg)
         last_signal_time[best_asset] = time.time()
 
-# ---------------- COMMANDS FIX ----------------
+# ---------------- COMMANDS ----------------
 def check_commands():
     global update_offset
     try:
@@ -184,14 +193,10 @@ def check_commands():
         for upd in res.get("result", []):
             if "message" in upd:
                 text = upd["message"].get("text", "").lower()
-                chat_id = upd["message"]["chat"]["id"]
-
                 if text == "/test":
                     send_telegram("✅ FAST PRO SNIPER BOT ACTIVE 🔥")
-
                 if text == "/force":
-                    generate_signal()  # only once per command
-
+                    generate_signal()  # only once
             update_offset = upd["update_id"] + 1
     except:
         pass
