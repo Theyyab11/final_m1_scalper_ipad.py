@@ -1,4 +1,4 @@
-# 🚀 VIP PRO ELITE SIGNAL BOT (NO AUTO TRADING - HIGH ACCURACY)
+# 🚀 VIP PRO ELITE SIGNAL BOT (NO AUTO TRADING - HIGH ACCURACY + DEBUG)
 
 import requests
 import pandas as pd
@@ -15,7 +15,7 @@ SPOT_SYMBOLS = ["ETH/USDT", "SOL/USDT"]
 API_KEY = "ab9ad3eac834482c84366b4e57ffefa7"
 
 TELEGRAM_TOKEN = "8601674578:AAHycLEx-6M_r_JHFuS96oKuLTBJqefwKnk"
-CHAT_ID = "992623579"  # VIP channel/group ID
+CHAT_ID = "992623579"  # Your personal Telegram ID
 
 ATR_PERIOD = 14
 MIN_CONFIDENCE = 90  # PRO signals only
@@ -23,6 +23,7 @@ MIN_CONFIDENCE = 90  # PRO signals only
 last_signal = {}
 last_sl_tp = {}
 update_offset = None
+
 # ---------------- TELEGRAM ----------------
 def send_telegram(msg):
     try:
@@ -43,11 +44,14 @@ def fetch_data(symbol, interval):
     try:
         res = requests.get(url, timeout=5).json()
         if "values" not in res:
+            print(f"[FETCH ERROR] {symbol} ({interval}): {res}")
             return None
         df = pd.DataFrame(res["values"])[::-1]
         df[['open','high','low','close']] = df[['open','high','low','close']].astype(float)
+        print(f"[FETCH] {symbol} ({interval}) prices fetched, {len(df)} bars")
         return df
-    except:
+    except Exception as e:
+        print(f"[FETCH ERROR] {symbol} ({interval}): {e}")
         return None
 
 # ---------------- INDICATORS ----------------
@@ -80,8 +84,7 @@ def detect_bos(df):
         low = df['low'].iloc[-3:-1].min()
         if last > high: return "BUY"
         if last < low: return "SELL"
-    except:
-        pass
+    except: pass
     return None
 
 def detect_ob(df):
@@ -92,8 +95,7 @@ def detect_ob(df):
         if rng == 0: return None
         if body / rng > 0.6:
             return "BUY" if last['close'] > last['open'] else "SELL"
-    except:
-        pass
+    except: pass
     return None
 
 # ---------------- SIGNAL ENGINE ----------------
@@ -151,6 +153,11 @@ def generate_signal(symbol, interval, label):
     # Save last SL/TP for tracking
     last_sl_tp[key] = {'sl': sl, 'tp': tp}
 
+    # --- CONSOLE DEBUG ---
+    print(f"[SIGNAL] {symbol} ({label}) | Direction: {direction} | "
+          f"Entry: {entry_low:.2f}-{entry_high:.2f} | SL: {sl:.2f} | TP: {tp:.2f} | Confidence: {confidence}%")
+
+    # SEND TELEGRAM
     msg = (
         f"🚀 VIP PRO SIGNAL\n"
         f"━━━━━━━━━━━━━━━\n"
@@ -162,7 +169,6 @@ def generate_signal(symbol, interval, label):
         f"⚡ Confidence: {confidence}%\n"
         f"━━━━━━━━━━━━━━━"
     )
-
     send_telegram(msg)
     last_signal[key] = direction
 
@@ -176,9 +182,11 @@ def check_sl_tp(symbol, price, label):
     tp = last_sl_tp[key]['tp']
 
     if price <= sl:
+        print(f"[SL HIT] {symbol} ({label}) at {price:.2f}")
         send_telegram(f"⚠️ SL HIT for {symbol} ({label}) at {price:.2f}")
         last_sl_tp.pop(key)
     elif price >= tp:
+        print(f"[TP HIT] {symbol} ({label}) at {price:.2f}")
         send_telegram(f"✅ TP HIT for {symbol} ({label}) at {price:.2f}")
         last_sl_tp.pop(key)
 
@@ -214,10 +222,8 @@ def check_commands():
         for upd in res.get("result", []):
             if "message" in upd:
                 text = upd["message"].get("text", "").lower()
-
                 if text == "/test":
                     send_telegram("🔥 VIP PRO BOT ACTIVE")
-
             update_offset = upd["update_id"] + 1
     except:
         pass
