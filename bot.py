@@ -1,4 +1,4 @@
-# 🚀 PRO FAST AI SNIPER BOT FIXED FLOAT ISSUE
+# 🚀 PRO FAST AI SNIPER BOT FIXED SERIES ISSUE
 
 import yfinance as yf
 import pandas as pd
@@ -78,17 +78,17 @@ def detect_bos(df):
 def detect_ob(df):
     if df.empty or len(df) < 1:
         return None
-    last = df.iloc[-1]
-    last_close = float(last['Close'].item()) if hasattr(last['Close'], 'item') else float(last['Close'])
-    last_open = float(last['Open'].item()) if hasattr(last['Open'], 'item') else float(last['Open'])
-    last_high = float(last['High'].item()) if hasattr(last['High'], 'item') else float(last['High'])
-    last_low = float(last['Low'].item()) if hasattr(last['Low'], 'item') else float(last['Low'])
-    body = abs(last_close - last_open)
-    rng = last_high - last_low
+    last_row = df.iloc[-1]
+    close = float(last_row['Close'])
+    open_ = float(last_row['Open'])
+    high = float(last_row['High'])
+    low = float(last_row['Low'])
+    body = abs(close - open_)
+    rng = high - low
     if rng == 0:
         return None
     if body / rng > 0.6:
-        return "BUY" if last_close > last_open else "SELL"
+        return "BUY" if close > open_ else "SELL"
     return None
 
 def momentum_strength(df):
@@ -124,10 +124,13 @@ def generate_signal():
         symbol = SYMBOLS[asset]
         df_m1 = get_data(symbol, "1d", "1m")
         df_m15 = get_data(symbol, "5d", "15m")
-        if df_m1 is None or df_m15 is None:
+        if df_m1 is None or df_m15 is None or df_m1.empty or df_m15.empty:
             continue
 
-        atr_val = float(atr(df_m1).iloc[-1])
+        atr_val_series = atr(df_m1)
+        if atr_val_series.empty:
+            continue
+        atr_val = float(atr_val_series.iloc[-1])
         if pd.isna(atr_val):
             continue
 
@@ -174,8 +177,8 @@ def generate_signal():
             f"🎯 SNIPER SIGNAL 🎯\n"
             f"Asset: {asset_name}\n"
             f"Direction: {best_signal['direction']}\n"
-            f"Entry: {best_signal['price']:.2f}\n"
-            f"SL: {sl:.2f} | TP: {tp:.2f}\n"
+            f"Entry: {best_signal['price']:.5f}\n"
+            f"SL: {sl:.5f} | TP: {tp:.5f}\n"
             f"Confidence: {best_signal['confidence']}% 🔥"
         )
 
