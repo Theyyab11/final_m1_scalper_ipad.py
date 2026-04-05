@@ -1,8 +1,8 @@
-# 🚀 PRO FAST AI SNIPER BOT (Multi-Asset: Gold + BTC + Oil + Forex + Indices)
+# 🚀 PRO FAST AI SNIPER BOT FIXED
 
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import threading
 import requests
@@ -21,7 +21,7 @@ SYMBOLS = {
 }
 
 ATR_PERIOD = 14
-MIN_CONFIDENCE = 70   # sniper mode strength
+MIN_CONFIDENCE = 70
 COOLDOWN_PER_ASSET = 120  # seconds per asset
 
 TELEGRAM_TOKEN = "8601674578:AAHycLEx-6M_r_JHFuS96oKuLTBJqefwKnk"
@@ -39,11 +39,11 @@ def send_telegram(message):
         pass
 
 def is_weekend():
-    return datetime.utcnow().weekday() >= 5
+    return datetime.now(timezone.utc).weekday() >= 5
 
 def get_active_symbols():
     if is_weekend():
-        return ["BTC", "ETH"]  # weekends only crypto
+        return ["BTC", "ETH"]
     return ["GOLD", "OIL", "EURUSD", "GBPUSD", "USDJPY", "NASDAQ", "SP500"]
 
 def get_data(symbol, period="2d", interval="1m"):
@@ -90,9 +90,9 @@ def calculate_confidence(bos, ob, trend, momentum, atr_val):
     score = 0
     if bos: score += 25
     if ob: score += 25
-    if bos == ob: score += 20
-    if trend == bos: score += 15
-    if momentum > (0.8 * atr_val): score += 15
+    if bos and ob and bos == ob: score += 20
+    if bos and trend == bos: score += 15
+    if momentum is not None and atr_val is not None and momentum > (0.8 * atr_val): score += 15
     return min(score, 100)
 
 def calculate_sl_tp(price, atr_val, direction):
@@ -186,17 +186,15 @@ def check_commands():
                 text = upd["message"].get("text", "").lower()
                 chat_id = upd["message"]["chat"]["id"]
 
-                # Send /test message once per command
                 if text == "/test":
                     send_telegram("✅ FAST PRO SNIPER BOT ACTIVE 🔥")
 
-                # Only generate signal once per /force
                 if text == "/force":
-                    generate_signal()
+                    generate_signal()  # only once per command
 
             update_offset = upd["update_id"] + 1
     except:
-        pass  # ignore network errors
+        pass
 
 # ---------------- THREADS ----------------
 def run_signals():
@@ -216,7 +214,6 @@ def run_commands():
 if __name__ == "__main__":
     print("🚀 FAST PRO SNIPER BOT RUNNING...")
 
-    # Ignore all old messages at startup
     try:
         res = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates", timeout=10).json()
         if "result" in res and len(res["result"]) > 0:
