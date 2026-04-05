@@ -1,46 +1,54 @@
-# 🚀 FAST PRO SNIPER BOT (TwelveData Live Prices, Scalping Mode)
+# 🚀 VIP ELITE SIGNAL BOT (NO AUTO TRADING - HIGH ACCURACY)
 
 import requests
 import pandas as pd
 import time
 import threading
+from datetime import datetime
 
 # ---------------- CONFIG ----------------
-SYMBOLS = ["XAU/USD", "BTC/USD"]  # Exness symbols
-INTERVAL = "1min"                 # live price interval
-ATR_PERIOD = 14
-MIN_CONFIDENCE = 85               # strong sniper signal
-COOLDOWN_PER_ASSET = 60           # 1 min per asset (fast scalping)
+SCALPING_SYMBOLS = ["XAU/USD", "BTC/USD"]
+FUTURES_SYMBOLS = ["BONK/USDT"]
+SPOT_SYMBOLS = ["ETH/USDT", "SOL/USDT"]
+
+API_KEY = "ab9ad3eac834482c84366b4e57ffefa7"
 
 TELEGRAM_TOKEN = "8601674578:AAHycLEx-6M_r_JHFuS96oKuLTBJqefwKnk"
 CHAT_ID = "992623579"
-TWELVEDATA_API_KEY = "ab9ad3eac834482c84366b4e57ffefa7"
 
-last_signal_time = {symbol: 0 for symbol in SYMBOLS}
+ATR_PERIOD = 14
+MIN_CONFIDENCE = 85
+
+last_signal = {}
 update_offset = None
 
-# ---------------- HELPERS ----------------
-def send_telegram(message):
+# ---------------- TELEGRAM ----------------
+def send_telegram(msg):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": message})
+        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
     except Exception as e:
         print("Telegram error:", e)
 
-def fetch_data(symbol):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=30&apikey={TWELVEDATA_API_KEY}"
+# ---------------- SESSION FILTER ----------------
+def is_killzone():
+    hour = datetime.utcnow().hour
+    return (7 <= hour <= 10) or (13 <= hour <= 16)
+
+# ---------------- DATA ----------------
+def fetch_data(symbol, interval):
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize=50&apikey={API_KEY}"
     try:
         res = requests.get(url, timeout=5).json()
         if "values" not in res:
-            print(f"Fetch error ({symbol}):", res)
             return None
-        df = pd.DataFrame(res["values"])[::-1]  # oldest -> newest
+        df = pd.DataFrame(res["values"])[::-1]
         df[['open','high','low','close']] = df[['open','high','low','close']].astype(float)
         return df
-    except Exception as e:
-        print(f"Fetch error ({symbol}):", e)
+    except:
         return None
 
+# ---------------- INDICATORS ----------------
 def atr(df):
     tr = pd.concat([
         df['high'] - df['low'],
@@ -49,7 +57,23 @@ def atr(df):
     ], axis=1).max(axis=1)
     return tr.rolling(ATR_PERIOD).mean()
 
-# ---------------- SIGNAL LOGIC ----------------
+def rsi(df, period=14):
+    delta = df['close'].diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = -delta.clip(upper=0).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def ema(df, period=50):
+    return df['close'].ewm(span=period).mean()
+
+def momentum(df):
+    return abs(df['close'].iloc[-1] - df['close'].iloc[-5])
+
+def trend(df):
+    return "BUY" if df['close'].iloc[-1] > df['close'].iloc[-5] else "SELL"
+
+# ---------------- SMART MONEY ----------------
 def detect_bos(df):
     try:
         last = df['close'].iloc[-1]
@@ -57,7 +81,8 @@ def detect_bos(df):
         low = df['low'].iloc[-3:-1].min()
         if last > high: return "BUY"
         if last < low: return "SELL"
-    except: pass
+    except:
+        pass
     return None
 
 def detect_ob(df):
@@ -68,72 +93,93 @@ def detect_ob(df):
         if rng == 0: return None
         if body / rng > 0.6:
             return "BUY" if last['close'] > last['open'] else "SELL"
-    except: pass
+    except:
+        pass
     return None
 
-def momentum_strength(df):
-    try:
-        if len(df['close']) < 5: return 0
-        return abs(df['close'].iloc[-1] - df['close'].iloc[-5])
-    except:
-        return 0
+# ---------------- SIGNAL ENGINE ----------------
+def generate_signal(symbol, interval, label):
+    df = fetch_data(symbol, interval)
+    if df is None or df.empty:
+        return
 
-def calculate_confidence(bos, ob, trend, momentum, atr_val):
-    score = 0
-    if bos: score += 25
-    if ob: score += 25
-    if bos == ob: score += 20
-    if trend == bos: score += 15
-    if momentum > (0.8 * atr_val): score += 15
-    return min(score, 100)
+    atr_val = atr(df).iloc[-1]
+    if pd.isna(atr_val) or atr_val == 0:
+        return
 
-def calculate_sl_tp(price, atr_val, direction):
+    ema50 = ema(df, 50).iloc[-1]
+    rsi_val = rsi(df).iloc[-1]
+    price = df['close'].iloc[-1]
+
+    trend_dir = "BUY" if price > ema50 else "SELL"
+    mom = momentum(df)
+
+    bos = detect_bos(df)
+    ob = detect_ob(df)
+
+    valid = (trend_dir == "BUY" and rsi_val < 70) or (trend_dir == "SELL" and rsi_val > 30)
+
+    confidence = 0
+    if bos: confidence += 25
+    if ob: confidence += 25
+    if bos == ob: confidence += 20
+    if valid: confidence += 20
+    if mom > (0.8 * atr_val): confidence += 10
+
+    if confidence < MIN_CONFIDENCE:
+        return
+
+    direction = bos if bos else trend_dir
+
+    key = f"{symbol}_{label}"
+    if last_signal.get(key) == direction:
+        return
+
+    # ENTRY ZONE
+    entry_low = price - (0.2 * atr_val)
+    entry_high = price + (0.2 * atr_val)
+
     if direction == "BUY":
-        return price - 0.5*atr_val, price + atr_val  # tight SL/TP for scalping
+        sl = price - 0.6 * atr_val
+        tp = price + 1.2 * atr_val
     else:
-        return price + 0.5*atr_val, price - atr_val
+        sl = price + 0.6 * atr_val
+        tp = price - 1.2 * atr_val
 
-# ---------------- SNIPER SIGNAL ----------------
-def generate_signal():
-    signal_sent = False
-    for symbol in SYMBOLS:
-        try:
-            if time.time() - last_signal_time.get(symbol, 0) < COOLDOWN_PER_ASSET:
-                continue
+    msg = (
+        f"🚀 VIP SIGNAL\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"📊 {symbol} ({label})\n"
+        f"📍 {direction}\n"
+        f"🎯 Entry Zone: {entry_low:.2f} - {entry_high:.2f}\n"
+        f"🛑 SL: {sl:.2f}\n"
+        f"💰 TP: {tp:.2f}\n"
+        f"⚡ Confidence: {confidence}%\n"
+        f"━━━━━━━━━━━━━━━"
+    )
 
-            df = fetch_data(symbol)
-            if df is None or df.empty: continue
+    send_telegram(msg)
+    last_signal[key] = direction
 
-            atr_val = atr(df).iloc[-1]
-            if pd.isna(atr_val) or atr_val == 0: continue
+# ---------------- LOOPS ----------------
+def run_scalping():
+    while True:
+        if is_killzone():
+            for s in SCALPING_SYMBOLS:
+                generate_signal(s, "1min", "SCALPING")
+        time.sleep(60)
 
-            bos = detect_bos(df)
-            ob = detect_ob(df)
-            trend = "BUY" if df['close'].iloc[-1] > df['close'].iloc[-3] else "SELL"
-            momentum = momentum_strength(df)
-            confidence = calculate_confidence(bos, ob, trend, momentum, atr_val)
+def run_futures():
+    while True:
+        for s in FUTURES_SYMBOLS:
+            generate_signal(s, "30min", "FUTURES (3x)")
+        time.sleep(1800)
 
-            if confidence >= MIN_CONFIDENCE:
-                direction = bos if bos else trend
-                price = df['close'].iloc[-1]
-                sl, tp = calculate_sl_tp(price, atr_val, direction)
-
-                msg = (
-                    f"🎯 SNIPER SIGNAL 🎯\n"
-                    f"Asset: {symbol}\n"
-                    f"Direction: {direction}\n"
-                    f"Entry: {price:.2f}\n"
-                    f"SL: {sl:.2f} | TP: {tp:.2f}\n"
-                    f"Confidence: {confidence}% 🔥"
-                )
-                send_telegram(msg)
-                last_signal_time[symbol] = time.time()
-                signal_sent = True
-        except Exception as e:
-            print(f"Signal error ({symbol}):", e)
-
-    if not signal_sent:
-        send_telegram("⏳ I am currently sniping...")
+def run_spot():
+    while True:
+        for s in SPOT_SYMBOLS:
+            generate_signal(s, "1h", "SPOT")
+        time.sleep(3600)
 
 # ---------------- COMMANDS ----------------
 def check_commands():
@@ -142,31 +188,32 @@ def check_commands():
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
         if update_offset:
             url += f"?offset={update_offset}"
+
         res = requests.get(url, timeout=5).json()
         for upd in res.get("result", []):
             if "message" in upd:
                 text = upd["message"].get("text", "").lower()
+
                 if text == "/test":
-                    send_telegram("✅ FAST PRO SNIPER BOT ACTIVE 🔥")
+                    send_telegram("🔥 VIP BOT ACTIVE")
+
             update_offset = upd["update_id"] + 1
     except:
         pass
-
-# ---------------- THREADS ----------------
-def run_signals():
-    while True:
-        generate_signal()
-        time.sleep(60)  # 1-minute scalping scan
 
 def run_commands():
     while True:
         check_commands()
         time.sleep(2)
 
-# ---------------- RUN ----------------
+# ---------------- START ----------------
 if __name__ == "__main__":
-    print("🚀 FAST PRO SNIPER BOT RUNNING...")
-    threading.Thread(target=run_signals, daemon=True).start()
+    print("🚀 VIP BOT RUNNING...")
+
+    threading.Thread(target=run_scalping, daemon=True).start()
+    threading.Thread(target=run_futures, daemon=True).start()
+    threading.Thread(target=run_spot, daemon=True).start()
     threading.Thread(target=run_commands, daemon=True).start()
+
     while True:
         time.sleep(1)
