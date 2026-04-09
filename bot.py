@@ -1,5 +1,3 @@
-
-import requests
 import pandas as pd
 import time
 import threading
@@ -44,7 +42,7 @@ def fetch_data(retries=3, delay=5):
         try:
             # Using yfinance for reliable free data
             # GC=F is Gold Futures, very close to XAUUSD spot price
-             data = yf.download(SYMBOL, period="100d", interval="1d", progress=False)
+            data = yf.download(SYMBOL, period="100d", interval="1d", progress=False)
             
             if data.empty:
                 print(f"Attempt {attempt+1}: No data returned from yfinance.")
@@ -76,8 +74,6 @@ def fetch_data(retries=3, delay=5):
                 if len(df) < ATR_PERIOD or len(df) < EMA_SLOW:
                     print("Critically low data. Cannot proceed with signal generation.")
                     return None
-
-            return df
 
             return df
         except Exception as e:
