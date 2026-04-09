@@ -34,7 +34,7 @@ klines = {"BTCUSD": [], "XAUUSD": []}
 last_signal_time = {"BTCUSD": 0, "XAUUSD": 0}
 
 # Global bot instance for sending messages
-application = None # Will be initialized later
+application = None 
 
 # ---------------- TELEGRAM ----------------
 async def send_telegram(msg, chat_id=CHAT_ID):
@@ -45,7 +45,6 @@ async def send_telegram(msg, chat_id=CHAT_ID):
         except Exception as e:
             print(f"Telegram send error: {e}")
     else:
-        # Fallback if application is not yet initialized (e.g., initial online message)
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
             requests.post(url, data={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"})
@@ -54,25 +53,19 @@ async def send_telegram(msg, chat_id=CHAT_ID):
 
 # ---------------- INDICATORS ----------------
 def calculate_indicators(df):
-    # ATR
     tr = pd.concat([
         df["high"] - df["low"],
         abs(df["high"] - df["close"].shift()),
         abs(df["low"] - df["close"].shift())
     ], axis=1).max(axis=1)
     df["atr"] = tr.rolling(ATR_PERIOD).mean()
-
-    # EMA
     df["ema_fast"] = df["close"].ewm(span=EMA_FAST, adjust=False).mean()
     df["ema_slow"] = df["close"].ewm(span=EMA_SLOW, adjust=False).mean()
-
-    # RSI
     delta = df["close"].diff()
     gain = (delta.where(delta > 0, 0)).ewm(span=RSI_PERIOD, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(span=RSI_PERIOD, adjust=False).mean()
     rs = gain / loss
     df["rsi"] = 100 - (100 / (1 + rs))
-
     return df
 
 # ---------------- SIGNAL ENGINE ----------------
@@ -81,26 +74,22 @@ def generate_signal_message(symbol, direction, price, sl, tp):
         f"<b>{symbol} {direction} NOW</b> 🔥\n\n"
         f"» POINT      : {price:.2f}\n"
         f"» STOPLOSS   : {sl:.2f}\n"
-        f"» TAKE PROFIT : {tp:.2f}\n\n"
+        f"» TAKE PROFIT : OPEN\n\n"
         f"<i>PLEASE ENSURE PROPER MONEY MANAGEMENT</i> ‼️\n"
         f"#168FX"
     )
 
 async def check_signal(symbol, df, chat_id=CHAT_ID):
     global last_signal_time
-    
     if len(df) < 30: return
-    
     row = df.iloc[-1]
     prev_row = df.iloc[-2]
-    
     price = row["close"]
     atr_val = row["atr"]
     rsi_val = row["rsi"]
     ema_f = row["ema_fast"]
     ema_s = row["ema_slow"]
     
-    # M1 Scalping Logic: EMA Cross + RSI Confirmation
     direction = None
     if ema_f > ema_s and prev_row["ema_fast"] <= prev_row["ema_slow"] and rsi_val < 65:
         direction = "BUY"
@@ -108,19 +97,14 @@ async def check_signal(symbol, df, chat_id=CHAT_ID):
         direction = "SELL"
         
     if direction:
-        # Avoid duplicate signals within 5 minutes for M1
         if time.time() - last_signal_time[symbol] < 300:
             return
-            
-        # SL/TP for Scalping (Tight)
         if direction == "BUY":
             sl = price - (1.5 * atr_val)
-            tp = price + (2.0 * atr_val)
         else:
             sl = price + (1.5 * atr_val)
-            tp = price - (2.0 * atr_val)
             
-        msg = generate_signal_message(symbol, direction, price, sl, tp)
+        msg = generate_signal_message(symbol, direction, price, sl, "OPEN")
         await send_telegram(msg, chat_id)
         last_signal_time[symbol] = time.time()
 
@@ -132,15 +116,12 @@ async def fetch_gold_price_loop():
             res = requests.get(url).json()
             if "price" in res:
                 price = float(res["price"])
-                # Build M1 candles from prices
-                klines["XAUUSD"].append({
-                    "close": price, "high": price, "low": price, "open": price
-                })
+                klines["XAUUSD"].append({"close": price, "high": price, "low": price, "open": price})
                 if len(klines["XAUUSD"]) > 100: klines["XAUUSD"].pop(0)
                 df = pd.DataFrame(klines["XAUUSD"])
                 df = calculate_indicators(df)
                 await check_signal("XAUUSD", df)
-            await asyncio.sleep(60) # Recommended interval to avoid IP block
+            await asyncio.sleep(60)
         except Exception as e:
             print(f"Gold fetch error: {e}")
             await asyncio.sleep(60)
@@ -149,13 +130,10 @@ def on_btc_message(ws, message):
     data = json.loads(message)
     if "k" in data:
         k = data["k"]
-        if k["x"]: # Candle closed
+        if k["x"]:
             klines["BTCUSD"].append({
-                "open": float(k["o"]),
-                "high": float(k["h"]),
-                "low": float(k["l"]),
-                "close": float(k["c"]),
-                "volume": float(k["v"])
+                "open": float(k["o"]), "high": float(k["h"]),
+                "low": float(k["l"]), "close": float(k["c"]), "volume": float(k["v"])
             })
             if len(klines["BTCUSD"]) > 100: klines["BTCUSD"].pop(0)
             df = pd.DataFrame(klines["BTCUSD"])
@@ -167,64 +145,33 @@ def run_btc_ws():
     ws = websocket.WebSocketApp(ws_url, on_message=on_btc_message)
     ws.run_forever()
 
-# ---------------- TELEGRAM COMMAND HANDLERS ----------------
+# ---------------- COMMAND HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_html("✅ ROYAL M1 SCALPER ONLINE - REAL-TIME MODE")
+    await update.message.reply_html("✅ ROYAL M1 SCALPER ONLINE")
 
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_html("Bot is active and responding!")
 
-async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Force a signal check for both symbols
-    for symbol in klines:
-        if len(klines[symbol]) > 30:
-            df = pd.DataFrame(klines[symbol])
-            df = calculate_indicators(df)
-            # Temporarily set last_signal_time to 0 to force a signal
-            original_last_signal_time = last_signal_time[symbol]
-            last_signal_time[symbol] = 0
-            await check_signal(symbol, df, update.message.chat_id)
-            last_signal_time[symbol] = original_last_signal_time # Restore original
-        else:
-            await update.message.reply_html(f"Not enough data for {symbol} to generate a signal yet.")
-
 async def price_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Get current prices for both symbols
     xau_price = klines["XAUUSD"][-1]["close"] if klines["XAUUSD"] else "N/A"
     btc_price = klines["BTCUSD"][-1]["close"] if klines["BTCUSD"] else "N/A"
-    msg = (
-        f"<b>CURRENT PRICES</b>\n\n"
-        f"» XAUUSD : {xau_price:.2f}\n"
-        f"» BTCUSD : {btc_price:.2f}"
-    )
+    msg = f"<b>CURRENT PRICES</b>\n\n» XAUUSD : {xau_price}\n» BTCUSD : {btc_price}"
     await update.message.reply_html(msg)
 
-# ---------------- MAIN ASYNC FUNCTION ----------------
+# ---------------- MAIN ----------------
 async def main():
     global application
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("test", test_command))
-    application.add_handler(CommandHandler("signal", signal_command))
     application.add_handler(CommandHandler("price", price_command))
 
-    # Start the Telegram bot in a separate thread
-    # Note: application.run_polling() is blocking, so we run it in a thread
-    # The data fetching loops are also async, so they need to be managed carefully
     telegram_thread = threading.Thread(target=lambda: application.run_polling(drop_pending_updates=True), daemon=True)
     telegram_thread.start()
 
-    # Send initial online message (using requests for initial message as application might not be fully ready)
-    send_telegram("✅ ROYAL M1 SCALPER ONLINE - REAL-TIME MODE")
-    
-    # Start BTC WebSocket in a separate thread
+    await send_telegram("✅ ROYAL M1 SCALPER ONLINE - REAL-TIME MODE")
     threading.Thread(target=run_btc_ws, daemon=True).start()
-    
-    # Start Gold REST Fetcher as an asyncio task
     await fetch_gold_price_loop()
 
-# ---------------- START ----------------
 if __name__ == "__main__":
     asyncio.run(main())
