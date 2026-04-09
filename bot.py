@@ -31,8 +31,8 @@ except Exception as e:
 
 # MT5 Price Offset (adjust these to match your broker)
 MT5_OFFSET = {
-    "XAUUSD": 0,
-    "BTCUSD": 0
+    "XAUUSD": 0.20,
+    "BTCUSD": 0.20
 }
 
 # Scalping Parameters
