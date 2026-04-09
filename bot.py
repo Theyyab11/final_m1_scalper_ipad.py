@@ -31,7 +31,7 @@ except Exception as e:
 
 # MT5 Price Offset (adjust these to match your broker)
 MT5_OFFSET = {
-    "XAUUSD": 2.50,  # Change this if your broker adds spread (e.g., 2.50)
+    "XAUUSD": 0.20,  # Change this if your broker adds spread (e.g., 2.50)
     "BTCUSD": 0   # Change this if your broker adds spread (e.g., 50)
 }
 
