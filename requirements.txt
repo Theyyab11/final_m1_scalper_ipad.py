@@ -2,3 +2,4 @@ websocket-client
 pandas
 requests
 pytz
+python-telegram-bot
